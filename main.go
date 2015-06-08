@@ -39,21 +39,7 @@ type Parameter struct {
 }
 
 func main() {
-	files := getFileList("/usr/share/man/man1")
-
-	//for _, file := range files[495:496] { // login
-	for _, file := range files[450:510] {
-		rawlines := loadFileToLines(file)
-		lines := getSynopsisLines(rawlines)
-		name := getDefinedName(rawlines)
-		command, err := buildCommand(name, lines)
-		fmt.Println(file)
-		if err != nil {
-			continue
-		} else {
-			fmt.Println(command)
-		}
-	}
+	parseManFiles("/usr/share/man/man1", 0, 0)
 }
 
 func getFileList(path string) []string {
@@ -70,6 +56,36 @@ func getFileList(path string) []string {
 		}
 	}
 	return filepaths
+}
+
+func parseManFiles(path string, rangeLower int, rangeUpper int) {
+	files := getFileList(path)
+
+	var s []string
+	if rangeUpper == 0 && rangeLower == 0 {
+		s = files[:]
+	} else {
+		s = files[rangeLower:rangeUpper]
+	}
+
+	//for _, file := range files[495:496] { // login debugging
+	for _, file := range s {
+		command, err := manfileToCommand(file)
+		if err != nil {
+			continue
+		} else {
+			fmt.Println(file)
+			fmt.Println(command)
+		}
+	}
+}
+
+func manfileToCommand(path string) (Command, error) {
+	rawlines := loadFileToLines(path)
+	lines := getSynopsisLines(rawlines)
+	name := getDefinedName(rawlines)
+	command, err := buildCommand(name, lines)
+	return command, err
 }
 
 func loadFileToLines(path string) []string {
@@ -133,7 +149,9 @@ func getSynopsisLines(lines []string) [][]string {
 		if start != 0 {
 			if !(strings.HasPrefix(line, ".Sh") || strings.HasPrefix(line, ".SH")) {
 				if compliantLine(line) {
-					if isNameLine(line) {
+					// Usually a name line is at the start, but a couple don't do this.
+					// The command is printed regardless, eg rlogin
+					if isNameLine(line) || usagePattern == -1 {
 						synopsis = append(synopsis, []string{})
 						usagePattern++
 					}
@@ -237,7 +255,11 @@ func buildParameter(tokens []string) (Parameter, error) {
 		if token == "Fl" && !p.hasflags {
 			if !p.hasflags {
 				p.hasflags = true
-				p.flags = tokens[i+1]
+				if len(tokens) > i+1 {
+					p.flags = tokens[i+1]
+				} else {
+					p.flags = "-"
+				}
 			} else if !p.hasparameter {
 				p.hasparameter = true
 				tp, e := buildParameter(tokens[i:])
